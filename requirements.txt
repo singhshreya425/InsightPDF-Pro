@@ -2,8 +2,7 @@ streamlit
 langchain-groq
 langchain-community
 langchain-huggingface
-chromadb
+faiss-cpu
 pypdf
 python-dotenv
 sentence-transformers
-pysqlite3-binary
