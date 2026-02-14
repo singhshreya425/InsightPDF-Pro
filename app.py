@@ -4,11 +4,11 @@ import shutil
 import gc
 from dotenv import load_dotenv
 
-# 1. Imports - Note the switch to FAISS
+# 1. Imports - Using FAISS for cloud stability (No SQLite required)
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS  # Swapped from Chroma
+from langchain_community.vectorstores import FAISS 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -18,26 +18,66 @@ from langchain_core.output_parsers import StrOutputParser
 load_dotenv()
 st.set_page_config(page_title="InsightPDF Pro", page_icon="📑", layout="wide")
 
-# High Contrast UI Styling
+# High Contrast UI Styling - Updated for consistent text color during streaming
 st.markdown("""
     <style>
+    /* Main Background */
     .stApp { background-color: #0d1117; }
-    section[data-testid="stSidebar"] { background-color: #010409 !important; border-right: 1px solid #30363d; }
-    [data-testid="stChatMessage"] { border-radius: 15px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #30363d; }
-    [data-testid="stChatMessage"]:nth-child(even) { background-color: #161b22; color: #ffffff !important; }
-    [data-testid="stChatMessage"]:nth-child(odd) { background-color: #21262d; color: #f0f6fc !important; }
-    [data-testid="stChatMessage"] p { color: #f0f6fc !important; font-size: 16px !important; }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] { 
+        background-color: #010409 !important; 
+        border-right: 1px solid #30363d; 
+    }
+
+    /* Chat Messages Container */
+    [data-testid="stChatMessage"] { 
+        border-radius: 15px; 
+        padding: 1.5rem; 
+        margin-bottom: 1rem; 
+        border: 1px solid #30363d; 
+    }
+
+    /* Message Bubbles - Alternating Colors */
+    [data-testid="stChatMessage"]:nth-child(even) { background-color: #161b22; }
+    [data-testid="stChatMessage"]:nth-child(odd) { background-color: #21262d; }
+
+    /* UNIVERSAL TEXT COLOR FIX */
+    /* Targets paragraphs, spans (streaming text), and markdown divs */
+    [data-testid="stChatMessage"] p, 
+    [data-testid="stChatMessage"] span, 
+    [data-testid="stChatMessage"] div,
+    .stMarkdown p { 
+        color: #f0f6fc !important; 
+        font-size: 16px !important; 
+        opacity: 1 !important;
+        line-height: 1.6;
+    }
+
+    /* Headers and Titles */
     h1, h2, h3 { color: #58a6ff !important; }
-    .stButton>button { background-color: #238636; color: white; border: none; width: 100%; }
+    
+    /* Sidebar Buttons */
+    .stButton>button { 
+        background-color: #238636; 
+        color: white; 
+        border: none; 
+        width: 100%;
+        transition: 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #2ea043;
+        border: none;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 class RAGEngine:
     def __init__(self):
-        # Using a reliable open-source embedding model
+        # Reliable open-source embedding model
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         
-        # API Key Handling
+        # API Key Handling (Cloud Secrets + Local .env support)
         api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
         if not api_key:
             st.error("🔑 Groq API Key not found! Add it to Streamlit Secrets.")
@@ -46,7 +86,7 @@ class RAGEngine:
         self.llm = ChatGroq(model_name="llama-3.3-70b-versatile", groq_api_key=api_key)
 
     def process_pdfs(self, uploaded_files):
-        # Memory Management
+        # Clear memory and old vectorstore
         if st.session_state.vectorstore is not None:
             st.session_state.vectorstore = None
             gc.collect() 
@@ -71,7 +111,7 @@ class RAGEngine:
         )
         chunks = splitter.split_documents(all_docs)
         
-        # FAISS initialization (No SQLite required!)
+        # FAISS initialization (In-memory, perfect for Streamlit Cloud)
         return FAISS.from_documents(chunks, self.embeddings)
 
 # --- INITIALIZATION ---
@@ -96,10 +136,12 @@ with st.sidebar:
 # --- MAIN CHAT AREA ---
 st.title("💬 PDF Intelligence Assistant")
 
+# Display Chat History
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
+# Chat Interaction
 if st.session_state.vectorstore:
     if user_input := st.chat_input("Ask about your PDFs..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
@@ -107,7 +149,7 @@ if st.session_state.vectorstore:
             st.markdown(user_input)
 
         with st.chat_message("assistant"):
-            # Retrieval logic using FAISS
+            # MMR Retrieval for diverse context
             retriever = st.session_state.vectorstore.as_retriever(
                 search_type="mmr", 
                 search_kwargs={"k": 5}
@@ -123,11 +165,12 @@ if st.session_state.vectorstore:
             chain = ({"context": lambda x: context_docs, "question": RunnablePassthrough()} 
                      | prompt | st.session_state.engine.llm | StrOutputParser())
 
+            # Use native stream for better UI experience
             full_response = st.write_stream(chain.stream(user_input))
             
             with st.expander("📌 View Sources"):
                 for i, doc in enumerate(context_docs):
-                    st.markdown(f"**Chunk {i+1}:** {doc.page_content[:200]}...")
+                    st.markdown(f"**Source {i+1}:** {doc.page_content[:250]}...")
             
             st.session_state.messages.append({"role": "assistant", "content": full_response})
 else:
