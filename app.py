@@ -23,7 +23,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 # 1. Configuration & Styling
 load_dotenv()
-DB_DIR = "vector_db"
+DB_DIR = "vector_db_fresh"
 st.set_page_config(page_title="InsightPDF Pro", page_icon="📑", layout="wide")
 
 # High Contrast UI
